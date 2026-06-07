@@ -28,8 +28,12 @@ let db = {
     KeyUse: {}
 };
 
-if (fs.existsSync("db.json")) {
-    db = JSON.parse(fs.readFileSync("db.json", "utf8"));
+try {
+    if (fs.existsSync("db.json")) {
+        db = JSON.parse(fs.readFileSync("db.json", "utf8"));
+    }
+} catch (e) {
+    console.log("DB load error, reset db");
 }
 
 function saveDB() {
@@ -317,6 +321,10 @@ const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
     console.log(`API Started On Port ${PORT}`);
+});
+
+app.get("/", (req, res) => {
+    res.send("Bot is running");
 });
 
 app.get("/db", (req, res) => {
