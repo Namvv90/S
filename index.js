@@ -1,4 +1,8 @@
-const fs = require("fs");
+const mongoose = require("mongoose");
+
+mongoose.connect(process.env.MONGO_URL)
+.then(() => console.log("MongoDB Connected"))
+.catch(err => console.log(err));
 
 const express = require("express");
 const app = express();
@@ -13,6 +17,8 @@ const {
     Routes
 } = require("discord.js");
 
+const Key = require("./models/Key");
+
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
@@ -22,27 +28,6 @@ const PREMIUM_ROLE = "1356627402213556265";
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
-
-let db = { KeyDontUse: {}, KeyUse: {} };
-
-try {
-    if (fs.existsSync("db.json")) {
-        const raw = fs.readFileSync("db.json", "utf8");
-        db = JSON.parse(raw || "{}");
-    }
-} catch (e) {
-    console.log("DB corrupted, reset safe mode");
-}
-
-function saveDB() {
-    fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
-}
-
-setInterval(() => {
-    try {
-        fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
-    } catch (e) {}
-}, 5000);
 
 const commands = [
     new SlashCommandBuilder()
@@ -103,65 +88,53 @@ client.on("interactionCreate", async interaction => {
     const userId = interaction.user.id;
 
     if (interaction.commandName === "create-key") {
-
+    
         if (userId !== OWNER_ID) {
-            return interaction.reply({
-                content: "❌ Owner Only",
-                ephemeral: true
-            });
+            return interaction.reply({ content: "❌ Owner Only", ephemeral: true });
         }
-
+    
         const key = interaction.options.getString("key");
-
-        if (
-            db.KeyDontUse[key] ||
-            db.KeyUse[key]
-        ) {
-            return interaction.reply({
-                content: "❌ Key Already Exists",
-                ephemeral: true
-            });
+    
+        const exist = await Key.findOne({ key });
+        if (exist) {
+            return interaction.reply({ content: "❌ Key Already Exists", ephemeral: true });
         }
-
-        db.KeyDontUse[key] = true;
-
-        saveDB();
-
+    
+        await Key.create({
+            key: key,
+            used: false,
+            discordId: "",
+            hwid: ""
+        });
+    
         return interaction.reply({
-            content: `✅ Key Create: ${key}`,
+            content: `✅ Key Created: ${key}`,
             ephemeral: true
         });
     }
-
+    
     if (interaction.commandName === "blacklist-key") {
-
+    
         if (userId !== OWNER_ID) {
-            return interaction.reply({
-                content: "❌ Owner Only",
-                ephemeral: true
-            });
+            return interaction.reply({ content: "❌ Owner Only", ephemeral: true });
         }
-
+    
         const key = interaction.options.getString("key");
-
-        if (db.KeyUse[key]) {
-
-            delete db.KeyUse[key];
-
-            saveDB();
-
-            return interaction.reply({
-                content: `✅ Blacklist Key: ${key}`,
-                ephemeral: true
-            });
+    
+        const data = await Key.findOne({ key });
+    
+        if (!data) {
+            return interaction.reply({ content: "❌ Key Not Found", ephemeral: true });
         }
-
+    
+        await Key.deleteOne({ key });
+    
         return interaction.reply({
-            content: "❌ No Keys in the Used List",
+            content: `✅ Key Blacklisted: ${key}`,
             ephemeral: true
         });
     }
-
+    
     if (interaction.commandName === "redeem") {
     
         await interaction.deferReply({ ephemeral: true });
@@ -173,11 +146,13 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply("❌ Already Redeemed");
         }
     
-        if (!db.KeyDontUse[key]) {
+        const data = await Key.findOne({ key });
+    
+        if (!data) {
             return interaction.editReply("❌ Key Not Working");
         }
     
-        if (db.KeyUse[key]) {
+        if (data.used) {
             return interaction.editReply("❌ Key Already Redeemed");
         }
     
@@ -187,114 +162,64 @@ client.on("interactionCreate", async interaction => {
             return interaction.editReply("❌ Bot missing Manage Roles permission");
         }
     
-        delete db.KeyDontUse[key];
+        data.used = true;
+        data.discordId = member.user.id;
+        data.hwid = "";
     
-        db.KeyUse[key] = {
-            DiscordId: member.user.id,
-            Hwid: ""
-        };
-    
-        try {
-            fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
-        } catch (e) {
-            console.log("Save DB failed");
-        }
+        await data.save();
     
         return interaction.editReply("✅ Redeem Success");
     }
-
+    
     if (interaction.commandName === "get-role") {
-
+    
         const member = interaction.member;
-
+    
         if (member.roles.cache.has(PREMIUM_ROLE)) {
-            return interaction.reply({
-                content: "❌ You Already Have a Role",
-                ephemeral: true
-            });
+            return interaction.reply({ content: "❌ You Already Have Role", ephemeral: true });
         }
-
-        for (const key in db.KeyUse) {
-
-            if (
-                db.KeyUse[key].DiscordId === userId
-            ) {
-
-                await member.roles.add(PREMIUM_ROLE);
-
-                return interaction.reply({
-                    content: "✅ Role Added",
-                    ephemeral: true
-                });
-            }
+    
+        const data = await Key.findOne({ discordId: userId });
+    
+        if (!data) {
+            return interaction.reply({ content: "❌ No Redeemed Key Found", ephemeral: true });
         }
-
+    
+        await member.roles.add(PREMIUM_ROLE);
+    
         return interaction.reply({
-            content: "❌ No Redeemed Key Found",
+            content: "✅ Role Added",
             ephemeral: true
         });
     }
-
+    
     if (interaction.commandName === "get-key") {
-
-        const member = interaction.member;
-
-        if (!member.roles.cache.has(PREMIUM_ROLE)) {
-            return interaction.reply({
-                content: "❌ You Don't Already Redeemed A Key",
-                ephemeral: true
-            });
+    
+        const data = await Key.findOne({ discordId: userId });
+    
+        if (!data) {
+            return interaction.reply({ content: "❌ Key Not Found", ephemeral: true });
         }
-
-        for (const key in db.KeyUse) {
-
-            if (
-                db.KeyUse[key].DiscordId === userId
-            ) {
-
-                return interaction.reply({
-                    content: `Your Key: \`${key}\``,
-                    ephemeral: true
-                });
-            }
-        }
-
+    
         return interaction.reply({
-            content: "❌ Key Not Found",
+            content: `Your Key: \`${data.key}\``,
             ephemeral: true
         });
     }
-
+    
     if (interaction.commandName === "resethwid") {
-
-        const member = interaction.member;
-
-        if (!member.roles.cache.has(PREMIUM_ROLE)) {
-            return interaction.reply({
-                content: "❌ You Don't Already Redeemed A Key",
-                ephemeral: true
-            });
+    
+        const data = await Key.findOne({ discordId: userId });
+    
+        if (!data) {
+            return interaction.reply({ content: "❌ Key Not Found", ephemeral: true });
         }
-
-        for (const key in db.KeyUse) {
-
-            if (
-                db.KeyUse[key].DiscordId === userId
-            ) {
-
-                db.KeyUse[key].Hwid = "";
-
-                saveDB();
-
-                return interaction.reply({
-                    content: "✅ HWID Reset Success",
-                    ephemeral: true
-                });
-            }
-        }
-
+    
+        data.hwid = "";
+        await data.save();
+    
         return interaction.reply({
-            content: "❌ Key Not Found",
+            content: "✅ HWID Reset Success",
             ephemeral: true
         });
     }
@@ -304,19 +229,17 @@ client.once("ready", () => {
     console.log(`Logged in as ${client.user.tag}`);
 });
 
-app.post("/checkkey", (req, res) => {
+app.post("/checkkey", async (req, res) => {
 
     const { key } = req.body;
 
-    if (db.KeyUse[key]) {
-        return res.json({
-            success: true
-        });
+    const data = await Key.findOne({ key });
+
+    if (!data || !data.used) {
+        return res.json({ success: false });
     }
 
-    return res.json({
-        success: false
-    });
+    return res.json({ success: true });
 });
 
 const PORT = process.env.PORT || 3000;
@@ -329,20 +252,23 @@ app.get("/", (req, res) => {
     res.send("Bot is running");
 });
 
-app.get("/db", (req, res) => {
-    res.json(db);
+app.get("/db", async (req, res) => {
+    const keys = await Key.find({});
+    res.json(keys);
 });
 
-app.post("/sethwid", (req, res) => {
+app.post("/sethwid", async (req, res) => {
+
     const { key, hwid } = req.body;
 
-    if (!db.KeyUse[key]) {
+    const data = await Key.findOne({ key });
+
+    if (!data) {
         return res.json({ success: false, message: "Key not found" });
     }
 
-    db.KeyUse[key].Hwid = hwid;
-
-    saveDB();
+    data.hwid = hwid;
+    await data.save();
 
     return res.json({ success: true });
 });
