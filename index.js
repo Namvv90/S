@@ -23,17 +23,22 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-let db = {
-    KeyDontUse: {},
-    KeyUse: {}
-};
+let db = { KeyDontUse: {}, KeyUse: {} };
 
 try {
     if (fs.existsSync("db.json")) {
-        db = JSON.parse(fs.readFileSync("db.json", "utf8"));
+        const raw = fs.readFileSync("db.json", "utf8");
+
+        if (raw) {
+            db = JSON.parse(raw);
+        }
+
+        db.KeyDontUse = db.KeyDontUse || {};
+        db.KeyUse = db.KeyUse || {};
     }
 } catch (e) {
     console.log("DB load error, reset db");
+    db = { KeyDontUse: {}, KeyUse: {} };
 }
 
 function saveDB() {
