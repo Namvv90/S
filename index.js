@@ -23,26 +23,22 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-let db = { KeyDontUse: {}, KeyUse: {} };
+let db = {
+    KeyDontUse: {},
+    KeyUse: {}
+};
 
 try {
     if (fs.existsSync("db.json")) {
-        const raw = fs.readFileSync("db.json", "utf8");
-        db = JSON.parse(raw || "{}");
+        db = JSON.parse(fs.readFileSync("db.json", "utf8"));
     }
 } catch (e) {
-    console.log("DB corrupted, reset safe mode");
+    console.log("DB load error, reset db");
 }
 
 function saveDB() {
     fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
 }
-
-setInterval(() => {
-    try {
-        fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
-    } catch (e) {}
-}, 5000);
 
 const commands = [
     new SlashCommandBuilder()
@@ -163,44 +159,48 @@ client.on("interactionCreate", async interaction => {
     }
 
     if (interaction.commandName === "redeem") {
-    
-        await interaction.deferReply({ ephemeral: true });
-    
+
         const member = interaction.member;
         const key = interaction.options.getString("key");
-    
+
         if (member.roles.cache.has(PREMIUM_ROLE)) {
-            return interaction.editReply("❌ Already Redeemed");
+            return interaction.reply({
+                content: "❌ You Already Redeemed A Key",
+                ephemeral: true
+            });
         }
-    
-        if (!db.KeyDontUse[key]) {
-            return interaction.editReply("❌ Key Not Working");
-        }
-    
+
         if (db.KeyUse[key]) {
-            return interaction.editReply("❌ Key Already Redeemed");
+            return interaction.reply({
+                content: "❌ Key Already Redeemed",
+                ephemeral: true
+            });
         }
+
+        if (!db.KeyDontUse[key]) {
+            return interaction.reply({
+                content: "❌ Key Not Working",
+                ephemeral: true
+            });
+        }
+
+        if (db.KeyDontUse[key]) {
+            delete db.KeyDontUse[key];
     
-        try {
+            db.KeyUse[key] = {
+                DiscordId: userId,
+                Hwid: ""
+            };
+    
+            saveDB();
+    
             await member.roles.add(PREMIUM_ROLE);
-        } catch (e) {
-            return interaction.editReply("❌ Bot missing Manage Roles permission");
+    
+            return interaction.reply({
+                content: "✅ Redeem Success",
+                ephemeral: true
+            });
         }
-    
-        delete db.KeyDontUse[key];
-    
-        db.KeyUse[key] = {
-            DiscordId: member.user.id,
-            Hwid: ""
-        };
-    
-        try {
-            fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
-        } catch (e) {
-            console.log("Save DB failed");
-        }
-    
-        return interaction.editReply("✅ Redeem Success");
     }
 
     if (interaction.commandName === "get-role") {
