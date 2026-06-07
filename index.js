@@ -23,25 +23,29 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-let db = { KeyDontUse: {}, KeyUse: {} };
+let db = {
+    KeyDontUse: {},
+    KeyUse: {}
+};
 
 try {
     if (fs.existsSync("db.json")) {
-        const raw = fs.readFileSync("db.json", "utf8");
-        db = JSON.parse(raw || "{}");
+        db = JSON.parse(fs.readFileSync("db.json", "utf8"));
     }
 } catch (e) {
-    console.log("DB corrupted, reset safe mode");
+    console.log("DB load error, reset db");
 }
 
 function saveDB() {
-    fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
+    try {
+        fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
+    } catch (e) {
+        console.log("Save DB failed", e);
+    }
 }
 
 setInterval(() => {
-    try {
-        fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
-    } catch (e) {}
+    saveDB();
 }, 5000);
 
 const commands = [
@@ -194,12 +198,6 @@ client.on("interactionCreate", async interaction => {
             Hwid: ""
         };
     
-        try {
-            fs.writeFileSync("db.json", JSON.stringify(db, null, 2));
-        } catch (e) {
-            console.log("Save DB failed");
-        }
-    
         return interaction.editReply("✅ Redeem Success");
     }
 
@@ -334,3 +332,7 @@ app.get("/db", (req, res) => {
 });
 
 client.login(TOKEN);
+
+process.on("exit", saveDB);
+process.on("SIGINT", saveDB);
+process.on("SIGTERM", saveDB);
