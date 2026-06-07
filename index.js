@@ -319,4 +319,8 @@ app.listen(PORT, () => {
     console.log(`API Started On Port ${PORT}`);
 });
 
+app.get("/db", (req, res) => {
+    res.json(db);
+});
+
 client.login(TOKEN);
