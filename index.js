@@ -252,9 +252,30 @@ app.get("/", (req, res) => {
     res.send("Bot is running");
 });
 
-app.get("/db", async (req, res) => {
-    const keys = await Key.find({});
-    res.json(keys);
+app.post("/verify", async (req, res) => {
+
+    const { key } = req.body;
+
+    const data = await Key.findOne({ key });
+
+    if (!data) {
+        return res.json({
+            success: false,
+            message: "Invalid Key"
+        });
+    }
+
+    if (!data.discordId) {
+        return res.json({
+            success: false,
+            message: "Key Not Redeemed"
+        });
+    }
+
+    return res.json({
+        success: true,
+        hwid: data.hwid
+    });
 });
 
 app.post("/sethwid", async (req, res) => {
@@ -264,13 +285,17 @@ app.post("/sethwid", async (req, res) => {
     const data = await Key.findOne({ key });
 
     if (!data) {
-        return res.json({ success: false, message: "Key not found" });
+        return res.json({
+            success: false
+        });
     }
 
     data.hwid = hwid;
     await data.save();
 
-    return res.json({ success: true });
+    return res.json({
+        success: true
+    });
 });
 
 client.login(TOKEN);
