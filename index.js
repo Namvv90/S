@@ -18,12 +18,14 @@ const {
 } = require("discord.js");
 
 const Key = require("./models/Key");
+const ResetCode = require("./models/ResetCode");
 
 const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 
 const OWNER_ID = "1101827562243641364";
 const PREMIUM_ROLE = "1356627402213556265";
+const RESET_ROLE = "1513177360965308669";
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
@@ -67,7 +69,25 @@ const commands = [
 
     new SlashCommandBuilder()
         .setName("resethwid")
-        .setDescription("Reset HWID")
+        .setDescription("Reset HWID"),
+        
+    new SlashCommandBuilder()
+    .setName("create-code-resethwid")
+    .setDescription("Create Reset HWID Code")
+    .addStringOption(o =>
+        o.setName("code")
+            .setDescription("Code")
+            .setRequired(true)
+    ),
+
+    new SlashCommandBuilder()
+        .setName("redeem-code-resethwid")
+        .setDescription("Redeem Reset HWID Code")
+        .addStringOption(o =>
+            o.setName("code")
+                .setDescription("Code")
+                .setRequired(true)
+        ),
 ]
 .map(cmd => cmd.toJSON());
 
@@ -143,7 +163,7 @@ client.on("interactionCreate", async interaction => {
         const key = interaction.options.getString("key");
     
         if (member.roles.cache.has(PREMIUM_ROLE)) {
-            return interaction.editReply("❌ Already Redeemed");
+            return interaction.editReply("❌ Your Already Redeemed");
         }
     
         const data = await Key.findOne({ key });
@@ -208,18 +228,121 @@ client.on("interactionCreate", async interaction => {
     }
     
     if (interaction.commandName === "resethwid") {
-    
         const data = await Key.findOne({ discordId: userId });
-    
+        
         if (!data) {
-            return interaction.reply({ content: "❌ Key Not Found", ephemeral: true });
+            return interaction.reply({
+                content: "❌ Key Not Found",
+                ephemeral: true
+            });
         }
-    
+        
+        const member = interaction.member;
+        
+        if (!member.roles.cache.has(RESET_ROLE)) {
+        
+            const now = Date.now();
+            const cooldown = 48 * 60 * 60 * 1000;
+        
+            if (now - data.lastReset < cooldown) {
+        
+                const remain = cooldown - (now - data.lastReset);
+                const hours = Math.ceil(remain / (1000 * 60 * 60));
+        
+                return interaction.reply({
+                    content: `❌ Cooldown Reset Hwid: ${hours} hour(s)`,
+                    ephemeral: true
+                });
+            }
+        
+            data.lastReset = now;
+        }
+        
         data.hwid = "";
+        
         await data.save();
-    
+        
         return interaction.reply({
             content: "✅ HWID Reset Success",
+            ephemeral: true
+        });
+    }
+    
+    if (interaction.commandName === "create-code-resethwid") {
+
+        if (userId !== OWNER_ID) {
+            return interaction.reply({
+                content: "❌ Owner Only",
+                ephemeral: true
+            });
+        }
+    
+        const code = interaction.options.getString("code");
+    
+        const keyExist = await Key.findOne({ key: code });
+        const codeExist = await ResetCode.findOne({ code });
+    
+        if (keyExist || codeExist) {
+            return interaction.reply({
+                content: "❌ Code Already Exists",
+                ephemeral: true
+            });
+        }
+    
+        await ResetCode.create({
+            code,
+            discordId: ""
+        });
+    
+        return interaction.reply({
+            content: `✅ Code Created: ${code}`,
+            ephemeral: true
+        });
+    }
+    
+    if (interaction.commandName === "redeem-code-resethwid") {
+
+        const member = interaction.member;
+    
+        if (member.roles.cache.has(RESET_ROLE)) {
+            return interaction.reply({
+                content: "❌ Your Already Redeemed Code",
+                ephemeral: true
+            });
+        }
+    
+        const code = interaction.options.getString("code");
+    
+        const data = await ResetCode.findOne({ code });
+    
+        if (!data) {
+            return interaction.reply({
+                content: "❌ Code Not Working",
+                ephemeral: true
+            });
+        }
+    
+        if (data.discordId !== "") {
+            return interaction.reply({
+                content: "❌ Code Already Redeemed",
+                ephemeral: true
+            });
+        }
+    
+        data.discordId = userId;
+        await data.save();
+    
+        try {
+            await member.roles.add(RESET_ROLE);
+        } catch {
+            return interaction.reply({
+                content: "❌ Bot Missing Manage Roles Permission",
+                ephemeral: true
+            });
+        }
+    
+        return interaction.reply({
+            content: "✅ Redeemed Code Success",
             ephemeral: true
         });
     }
