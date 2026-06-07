@@ -184,21 +184,23 @@ client.on("interactionCreate", async interaction => {
             });
         }
 
-        delete db.KeyDontUse[key];
-
-        db.KeyUse[key] = {
-            DiscordId: userId,
-            Hwid: ""
-        };
-
-        saveDB();
-
-        await member.roles.add(PREMIUM_ROLE);
-
-        return interaction.reply({
-            content: "✅ Redeem Success",
-            ephemeral: true
-        });
+        if (db.KeyDontUse[key]) {
+            delete db.KeyDontUse[key];
+    
+            db.KeyUse[key] = {
+                DiscordId: userId,
+                Hwid: ""
+            };
+    
+            saveDB();
+    
+            await member.roles.add(PREMIUM_ROLE);
+    
+            return interaction.reply({
+                content: "✅ Redeem Success",
+                ephemeral: true
+            });
+        }
     }
 
     if (interaction.commandName === "get-role") {
