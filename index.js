@@ -25,7 +25,6 @@ const CLIENT_ID = process.env.CLIENT_ID;
 
 const OWNER_ID = "1101827562243641364";
 const PREMIUM_ROLE = "1356627402213556265";
-const RESET_ROLE = "1513177360965308669";
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds]
