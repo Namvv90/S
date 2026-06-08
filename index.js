@@ -106,6 +106,7 @@ client.on("interactionCreate", async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     const userId = interaction.user.id;
+    const member = interaction.member;
 
     if (interaction.commandName === "create-key") {
     
@@ -159,7 +160,6 @@ client.on("interactionCreate", async interaction => {
     
         await interaction.deferReply({ ephemeral: true });
     
-        const member = interaction.member;
         const key = interaction.options.getString("key");
     
         if (member.roles.cache.has(PREMIUM_ROLE)) {
@@ -192,8 +192,6 @@ client.on("interactionCreate", async interaction => {
     }
     
     if (interaction.commandName === "get-role") {
-    
-        const member = interaction.member;
     
         if (member.roles.cache.has(PREMIUM_ROLE)) {
             return interaction.reply({ content: "❌ You Already Have Role", ephemeral: true });
@@ -228,6 +226,11 @@ client.on("interactionCreate", async interaction => {
     }
     
     if (interaction.commandName === "resethwid") {
+
+        if (!member.roles.cache.has(PREMIUM_ROLE)) {
+            return interaction.reply({ content: "Buyer Only", ephemeral: true });
+        }
+        
         const data = await Key.findOne({ discordId: userId });
         
         if (!data) {
@@ -237,26 +240,21 @@ client.on("interactionCreate", async interaction => {
             });
         }
         
-        const member = interaction.member;
+        const now = Date.now();
+        const cooldown = 48 * 60 * 60 * 1000;
         
-        if (!member.roles.cache.has(RESET_ROLE)) {
+        if (now - data.lastReset < cooldown) {
         
-            const now = Date.now();
-            const cooldown = 48 * 60 * 60 * 1000;
+            const remain = cooldown - (now - data.lastReset);
+            const hours = Math.ceil(remain / (1000 * 60 * 60));
         
-            if (now - data.lastReset < cooldown) {
-        
-                const remain = cooldown - (now - data.lastReset);
-                const hours = Math.ceil(remain / (1000 * 60 * 60));
-        
-                return interaction.reply({
-                    content: `❌ Cooldown Reset Hwid: ${hours} hour(s)`,
-                    ephemeral: true
-                });
-            }
-        
-            data.lastReset = now;
+            return interaction.reply({
+                content: `❌ Cooldown Reset Hwid: ${hours} hour(s)`,
+                ephemeral: true
+            });
         }
+        
+        data.lastReset = now;
         
         data.hwid = "";
         
@@ -290,8 +288,7 @@ client.on("interactionCreate", async interaction => {
         }
     
         await ResetCode.create({
-            code,
-            discordId: ""
+            code
         });
     
         return interaction.reply({
@@ -301,48 +298,43 @@ client.on("interactionCreate", async interaction => {
     }
     
     if (interaction.commandName === "redeem-code-resethwid") {
-
-        const member = interaction.member;
     
-        if (member.roles.cache.has(RESET_ROLE)) {
-            return interaction.reply({
-                content: "❌ Your Already Redeemed Code",
-                ephemeral: true
-            });
+        if (!member.roles.cache.has(PREMIUM_ROLE)) {
+            return interaction.reply({ content: "Buyer Only", ephemeral: true });
         }
-    
+        
         const code = interaction.options.getString("code");
     
-        const data = await ResetCode.findOne({ code });
+        const resetCode = await ResetCode.findOne({ code });
     
-        if (!data) {
+        if (!resetCode) {
             return interaction.reply({
                 content: "❌ Code Not Working",
                 ephemeral: true
             });
         }
     
-        if (data.discordId !== "") {
+        const keyData = await Key.findOne({
+            discordId: userId
+        });
+    
+        if (!keyData) {
             return interaction.reply({
-                content: "❌ Code Already Redeemed",
+                content: "❌ Key Not Found",
                 ephemeral: true
             });
         }
     
-        data.discordId = userId;
-        await data.save();
+        keyData.hwid = "";
     
-        try {
-            await member.roles.add(RESET_ROLE);
-        } catch {
-            return interaction.reply({
-                content: "❌ Bot Missing Manage Roles Permission",
-                ephemeral: true
-            });
-        }
+        await keyData.save();
+    
+        await ResetCode.deleteOne({
+            code
+        });
     
         return interaction.reply({
-            content: "✅ Redeemed Code Success",
+            content: "✅ Resethwid Success",
             ephemeral: true
         });
     }
